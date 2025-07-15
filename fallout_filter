@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fallout 2 Photo Filter</title>
+    <!-- Подключение Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for Inter font and overall look */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; /* Dark background */
+            color: #48bb78; /* Green text, like in Fallout */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 1rem;
+            box-sizing: border-box;
+        }
+        /* Styles for buttons and input fields */
+        .btn {
+            background-color: #2f855a; /* Dark green button */
+            color: #e2e8f0; /* Light text on button */
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: bold;
+            transition: background-color 0.2s;
+            cursor: pointer;
+            white-space: nowrap; /* Prevent text wrapping */
+        }
+        .btn:hover {
+            background-color: #38a169; /* Lighter green on hover */
+        }
+        input[type="file"] {
+            border: 2px dashed #48bb78; /* Green dashed border */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            color: #e2e8f0;
+            background-color: #2d3748; /* Dark gray input field background */
+            cursor: pointer;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 8px;
+            background: #48bb78; /* Green slider track */
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+            border-radius: 4px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #e2e8f0; /* White slider thumb */
+            cursor: pointer;
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            cursor: pointer;
+        }
+        canvas {
+            border: 2px solid #48bb78; /* Green border around canvas */
+            border-radius: 0.5rem;
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 1rem auto;
+            background-color: #000; /* Black background for canvas */
+        }
+        .container {
+            background-color: #2d3748; /* Dark gray background for container */
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 900px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .message-box {
+            background-color: #2f855a;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            text-align: center;
+            display: none; /* Hidden by default */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold mb-6 text-center">Fallout 2 Photo Filter</h1>
+
+        <!-- Message box for user feedback -->
+        <div id="messageBox" class="message-box"></div>
+
+        <input type="file" id="imageInput" accept="image/*" class="mb-4 w-full">
+        <div class="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 mb-4 w-full justify-center">
+            <button id="applyFilterBtn" class="btn">Применить Fallout 2 фильтр</button>
+            <button id="downloadBtn" class="btn" disabled>Скачать изображение</button>
+        </div>
+
+        <div class="w-full mb-4">
+            <label for="brightnessSlider" class="block text-sm font-medium mb-2">Яркость (влияет на порог):</label>
+            <input type="range" id="brightnessSlider" min="0" max="200" value="100" class="w-full">
+        </div>
+        <div class="w-full mb-4">
+            <label for="contrastSlider" class="block text-sm font-medium mb-2">Контраст (влияет на порог):</label>
+            <input type="range" id="contrastSlider" min="0" max="200" value="100" class="w-full">
+        </div>
+        <div class="w-full mb-4">
+            <label for="pixelationSlider" class="block text-sm font-medium mb-2">Пикселизация:</label>
+            <input type="range" id="pixelationSlider" min="1" max="20" value="5" class="w-full">
+        </div>
+
+        <canvas id="imageCanvas" class="w-full"></canvas>
+    </div>
+
+    <script>
+        // Get DOM element references
+        const imageInput = document.getElementById('imageInput');
+        const applyFilterBtn = document.getElementById('applyFilterBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const imageCanvas = document.getElementById('imageCanvas');
+        const ctx = imageCanvas.getContext('2d');
+        const brightnessSlider = document.getElementById('brightnessSlider');
+        const contrastSlider = document.getElementById('contrastSlider');
+        const pixelationSlider = document.getElementById('pixelationSlider');
+        const messageBox = document.getElementById('messageBox');
+
+        let originalImage = null; // Stores the original image
+        let tempCanvas = document.createElement('canvas'); // Temporary canvas for processing
+        let tempCtx = tempCanvas.getContext('2d');
+
+        // Define a palette of Fallout-like green shades based on the reference image
+        // These are approximate values derived from analyzing the reference image
+        const FALLOUT_PALETTE = [
+            { r: 0, g: 0, b: 0 },       // 0: Pure Black
+            { r: 10, g: 40, b: 10 },    // 1: Very Dark Green
+            { r: 20, g: 80, b: 20 },    // 2: Dark Green
+            { r: 40, g: 120, b: 40 },   // 3: Mid Green
+            { r: 60, g: 180, b: 60 },   // 4: Lighter Green
+            { r: 80, g: 255, b: 80 }    // 5: Brightest Green
+        ];
+
+        // Function to display messages to the user
+        function showMessage(message, type = 'info') {
+            messageBox.textContent = message;
+            messageBox.style.display = 'block';
+            if (type === 'error') {
+                messageBox.style.backgroundColor = '#c53030'; // Red for errors
+            } else {
+                messageBox.style.backgroundColor = '#2f855a'; // Green for info
+            }
+            // Hide message after 5 seconds
+            setTimeout(() => {
+                messageBox.style.display = 'none';
+            }, 5000);
+        }
+
+        // Image input change handler
+        imageInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        originalImage = img; // Save the original image
+                        // Reset sliders
+                        brightnessSlider.value = 100;
+                        contrastSlider.value = 100;
+                        pixelationSlider.value = 5;
+                        applyFilterBtn.disabled = false; // Enable filter button
+                        downloadBtn.disabled = true; // Disable download button until filter applied
+                        llmOutput.textContent = ''; // Clear LLM output
+                        applyFalloutFilter(); // Apply filter immediately after loading to show effect
+                        showMessage('Изображение загружено. Примените фильтр.', 'info');
+                    };
+                    img.onerror = () => {
+                        showMessage('Не удалось загрузить изображение. Пожалуйста, убедитесь, что это действительный файл изображения.', 'error');
+                        originalImage = null;
+                        applyFilterBtn.disabled = true;
+                        downloadBtn.disabled = true;
+                        llmOutput.textContent = '';
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            } else {
+                originalImage = null;
+                applyFilterBtn.disabled = true;
+                downloadBtn.disabled = true;
+                llmOutput.textContent = '';
+                showMessage('Пожалуйста, выберите файл изображения.', 'error');
+            }
+        });
+
+        // Function to apply Fallout 2 filter
+        function applyFalloutFilter() {
+            if (!originalImage) {
+                showMessage('Сначала загрузите изображение!', 'error');
+                return;
+            }
+
+            const pixelationFactor = parseInt(pixelationSlider.value);
+            const fixedDistortionFactor = 0.00005; // Subtle fixed distortion for curved screen effect
+
+            // --- Stage 1: Feature Extraction & Base Color Conversion (Simplification/Thresholding) ---
+            // Set temporary canvas dimensions for pixelation
+            const scaledWidth = Math.floor(originalImage.width / pixelationFactor);
+            const scaledHeight = Math.floor(originalImage.height / pixelationFactor);
+
+            tempCanvas.width = scaledWidth;
+            tempCanvas.height = scaledHeight;
+
+            // Draw original image onto the downsampled temporary canvas
+            tempCtx.clearRect(0, 0, scaledWidth, scaledHeight);
+            tempCtx.drawImage(originalImage, 0, 0, scaledWidth, scaledHeight);
+
+            // Get pixel data from the downsampled canvas
+            const downsampledImageData = tempCtx.getImageData(0, 0, scaledWidth, scaledHeight);
+            const downsampledPixels = downsampledImageData.data;
+
+            // Set main canvas dimensions for display, maintaining aspect ratio
+            const displayWidth = imageCanvas.parentElement.clientWidth;
+            const displayHeight = (displayWidth / originalImage.width) * originalImage.height;
+
+            imageCanvas.width = displayWidth;
+            imageCanvas.height = displayHeight;
+
+            // Create new ImageData for the main canvas
+            const outputImageData = ctx.createImageData(displayWidth, displayHeight);
+            const outputPixels = outputImageData.data;
+
+            const brightness = parseFloat(brightnessSlider.value) / 100;
+            const contrast = parseFloat(contrastSlider.value) / 100;
+
+            // Iterate through each pixel on the output canvas
+            for (let y = 0; y < displayHeight; y++) {
+                for (let x = 0; x < displayWidth; x++) {
+                    // --- Apply CRT Distortion (barrel distortion) ---
+                    const centerX = displayWidth / 2;
+                    const centerY = displayHeight / 2;
+                    const dx = x - centerX;
+                    const dy = y - centerY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    const angle = Math.atan2(dy, dx);
+
+                    // Distortion coefficient (fixed and subtle)
+                    const distortionAmount = 1 + fixedDistortionFactor * (distance / Math.max(centerX, centerY)) ** 2;
+
+                    const sourceX = Math.floor(centerX + dx * distortionAmount);
+                    const sourceY = Math.floor(centerY + dy * distortionAmount);
+
+                    let r, g, b;
+
+                    // Check if sourceX/Y is within bounds of the downsampled image
+                    if (sourceX >= 0 && sourceX < displayWidth && sourceY >= 0 && sourceY < displayHeight) {
+                        // Scale sourceX/Y coordinates to downsampledImageData
+                        const srcXScaled = Math.floor(sourceX / displayWidth * scaledWidth);
+                        const srcYScaled = Math.floor(sourceY / displayHeight * scaledHeight);
+
+                        const srcIndex = (srcYScaled * scaledWidth + srcXScaled) * 4;
+
+                        // Get original RGB values from downsampled image
+                        r = downsampledPixels[srcIndex];
+                        g = downsampledPixels[srcIndex + 1];
+                        b = downsampledPixels[srcIndex + 2];
+
+                        // Apply brightness and contrast before grayscale conversion
+                        r = (r * brightness - 128) * contrast + 128;
+                        g = (g * brightness - 128) * contrast + 128;
+                        b = (b * brightness - 128) * contrast + 128;
+
+                        // Convert to grayscale (luminance)
+                        let gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                        gray = Math.min(255, Math.max(0, gray)); // Clamp values
+
+                        // --- Map to Fallout Palette ---
+                        // Find the closest color in the defined palette
+                        // We map grayscale value to a position in the palette
+                        const paletteIndex = Math.floor(gray / 255 * (FALLOUT_PALETTE.length - 1));
+                        let finalPixelColor = FALLOUT_PALETTE[paletteIndex];
+
+                        // Apply the chosen palette color
+                        outputPixels[(y * displayWidth + x) * 4] = finalPixelColor.r;
+                        outputPixels[(y * displayWidth + x) * 4 + 1] = finalPixelColor.g;
+                        outputPixels[(y * displayWidth + x) * 4 + 2] = finalPixelColor.b;
+                        outputPixels[(y * displayWidth + x) * 4 + 3] = 255; // Alpha channel remains opaque
+
+                        // Apply horizontal scanlines effect (darker by 30%)
+                        if (y % 2 === 0) { // Every second row will be darker
+                            const scanlineDarkenFactor = 0.70; /* Darken by 30% for scanlines */
+                            outputPixels[(y * displayWidth + x) * 4] *= scanlineDarkenFactor;
+                            outputPixels[(y * displayWidth + x) * 4 + 1] *= scanlineDarkenFactor;
+                            outputPixels[(y * displayWidth + x) * 4 + 2] *= scanlineDarkenFactor;
+                        }
+                    } else {
+                        // If pixel is outside the source image after distortion, make it black
+                        outputPixels[(y * displayWidth + x) * 4] = FALLOUT_PALETTE[0].r; // Pure Black
+                        outputPixels[(y * displayWidth + x) * 4 + 1] = FALLOUT_PALETTE[0].g;
+                        outputPixels[(y * displayWidth + x) * 4 + 2] = FALLOUT_PALETTE[0].b;
+                        outputPixels[(y * displayWidth + x) * 4 + 3] = 255;
+                    }
+                }
+            }
+
+            // Put the modified data back onto the canvas
+            ctx.putImageData(outputImageData, 0, 0);
+            downloadBtn.disabled = false; // Enable download button
+            showMessage('Фильтр Fallout 2 применен!', 'info');
+        }
+
+        // "Apply Filter" button handler
+        applyFilterBtn.addEventListener('click', applyFalloutFilter);
+
+        // Sliders change handlers
+        brightnessSlider.addEventListener('input', applyFalloutFilter);
+        contrastSlider.addEventListener('input', applyFalloutFilter);
+        pixelationSlider.addEventListener('input', applyFalloutFilter);
+
+
+        // "Download Image" button handler
+        downloadBtn.addEventListener('click', () => {
+            if (imageCanvas.width > 0 && imageCanvas.height > 0) {
+                const link = document.createElement('a');
+                link.download = 'fallout2_image.png';
+                link.href = imageCanvas.toDataURL('image/png');
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showMessage('Изображение успешно скачано.', 'info');
+            } else {
+                showMessage('Нет изображения для скачивания!', 'error');
+            }
+        });
+
+        // Initialize button states on page load
+        window.onload = () => {
+            applyFilterBtn.disabled = true;
+            downloadBtn.disabled = true;
+            // Set initial canvas dimensions (can be made responsive)
+            imageCanvas.width = 600;
+            imageCanvas.height = 400;
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, imageCanvas.width, imageCanvas.height);
+            ctx.font = '20px Inter';
+            ctx.fillStyle = '#48bb78';
+            ctx.textAlign = 'center';
+            ctx.fillText('Загрузите изображение для обработки', imageCanvas.width / 2, imageCanvas.height / 2);
+        };
+
+        // Add window resize handler for canvas responsiveness
+        window.addEventListener('resize', () => {
+            // Redraw image to adapt to new window size
+            if (originalImage) {
+                applyFalloutFilter(); // Re-apply filter to ensure it looks correct
+            }
+        });
+    </script>
+</body>
+</html>
